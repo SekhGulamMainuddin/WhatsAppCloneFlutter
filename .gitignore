@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 android/app/google-services.json
+**/firebase_app_id_file.json
 
 # Symbolication related
 app.*.symbols
