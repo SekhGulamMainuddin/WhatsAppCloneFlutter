@@ -2,94 +2,140 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:whatsapp_clone_using_flutter/common/firebase_dependecy_provider.dart';
-import 'package:whatsapp_clone_using_flutter/common/repository/common_repository.dart';
-import 'package:whatsapp_clone_using_flutter/common/upload_enum.dart';
+import 'package:whatsapp_clone_using_flutter/common/repositories/common_firebase_storage_repository.dart';
+import 'package:whatsapp_clone_using_flutter/common/utils/utils.dart';
+import 'package:whatsapp_clone_using_flutter/features/auth/screens/otp_screen.dart';
+import 'package:whatsapp_clone_using_flutter/features/auth/screens/user_information_screen.dart';
 import 'package:whatsapp_clone_using_flutter/models/user_model.dart';
+import 'package:whatsapp_clone_using_flutter/mobile_layout_screen.dart';
 
-final authRepositoryProvider = Provider((ref) =>
-    AuthRepository(ref.watch(firebaseAuth), ref.watch(firebaseFirestore), ref));
+final authRepositoryProvider = Provider(
+  (ref) => AuthRepository(
+    auth: FirebaseAuth.instance,
+    firestore: FirebaseFirestore.instance,
+  ),
+);
 
 class AuthRepository {
-  final FirebaseAuth _auth;
-  final FirebaseFirestore _firestore;
-  final ProviderRef _ref;
+  final FirebaseAuth auth;
+  final FirebaseFirestore firestore;
+  AuthRepository({
+    required this.auth,
+    required this.firestore,
+  });
 
-  AuthRepository(this._auth, this._firestore, this._ref);
+  Future<UserModel?> getCurrentUserData() async {
+    var userData =
+        await firestore.collection('users').doc(auth.currentUser?.uid).get();
 
-  void sendOTPToPhone(String phoneNumber, void otpCodeSent(String, Int)) async {
+    UserModel? user;
+    if (userData.data() != null) {
+      user = UserModel.fromMap(userData.data()!);
+    }
+    return user;
+  }
+
+  void signInWithPhone(BuildContext context, String phoneNumber) async {
     try {
-      await _auth.verifyPhoneNumber(
+      await auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
-        verificationCompleted: (credentials) {},
-        verificationFailed: (e) {},
-        codeSent: (String verificationId, int? resendToken) {
-          otpCodeSent(verificationId, resendToken);
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          await auth.signInWithCredential(credential);
         },
+        verificationFailed: (e) {
+          throw Exception(e.message);
+        },
+        codeSent: ((String verificationId, int? resendToken) async {
+          Navigator.pushNamed(
+            context,
+            OTPScreen.routeName,
+            arguments: verificationId,
+          );
+        }),
         codeAutoRetrievalTimeout: (String verificationId) {},
       );
-    } catch (e) {
-      debugPrint("this is the error $e");
-      Fluttertoast.showToast(msg: "Some error occurred while send the OTP");
+    } on FirebaseAuthException catch (e) {
+      showSnackBar(context: context, content: e.message!);
     }
   }
 
-  void verifyOTP(String otp, String verificationId,
-      void Function(bool success) verifySuccess) async {
+  void verifyOTP({
+    required BuildContext context,
+    required String verificationId,
+    required String userOTP,
+  }) async {
     try {
-      final credentials = PhoneAuthProvider.credential(
-          verificationId: verificationId, smsCode: otp);
-      await _auth.signInWithCredential(credentials);
-      verifySuccess(true);
-    } catch (e) {
-      verifySuccess(false);
-      debugPrint(e.toString());
-      Fluttertoast.showToast(
-          msg: "Some error occurred while verifying the OTP");
-    }
-  }
-
-  Future<UserModel?> getUserData() async {
-    try {
-      final userData = await _firestore
-          .collection("users")
-          .doc(_auth.currentUser?.uid)
-          .get();
-      if (userData.exists && userData.data() != null) {
-        return UserModel.fromMap(userData.data()!);
-      }
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<UploadStatus> updateUserNameAndPhoto(
-      File? image, String photoUrl, String userName) async {
-    try {
-      if (image != null) {
-        String? imageUrl = await _ref
-            .read(commonRepositoryProvider)
-            .uploadFile(image, "profilePic/${_auth.currentUser?.uid}");
-        if (imageUrl != null) {
-          photoUrl = imageUrl;
-        }
-      }
-      final userModel = UserModel(
-        userName: userName,
-        phoneNumber: _auth.currentUser!.phoneNumber!,
-        uid: _auth.currentUser!.uid,
-        isOnline: true,
-        photoUrl: photoUrl,
-        groupId: []
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: userOTP,
       );
-      await _firestore.collection("user").doc(_auth.currentUser!.uid).set(userModel.toMap());
-      return UploadStatus.success;
-    } catch (e) {
-      debugPrint(e.toString());
+      await auth.signInWithCredential(credential);
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        UserInformationScreen.routeName,
+        (route) => false,
+      );
+    } on FirebaseAuthException catch (e) {
+      showSnackBar(context: context, content: e.message!);
     }
-    return UploadStatus.failure;
+  }
+
+  void saveUserDataToFirebase({
+    required String name,
+    required File? profilePic,
+    required ProviderRef ref,
+    required BuildContext context,
+  }) async {
+    try {
+      String uid = auth.currentUser!.uid;
+      String photoUrl =
+          'https://png.pngitem.com/pimgs/s/649-6490124_katie-notopoulos-katienotopoulos-i-write-about-tech-round.png';
+
+      if (profilePic != null) {
+        photoUrl = await ref
+            .read(commonFirebaseStorageRepositoryProvider)
+            .storeFileToFirebase(
+              'profilePic/$uid',
+              profilePic,
+            );
+      }
+
+      var user = UserModel(
+        name: name,
+        uid: uid,
+        profilePic: photoUrl,
+        isOnline: true,
+        phoneNumber: auth.currentUser!.phoneNumber!,
+        groupId: [],
+      );
+
+      await firestore.collection('users').doc(uid).set(user.toMap());
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MobileLayoutScreen(),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      showSnackBar(context: context, content: e.toString());
+    }
+  }
+
+  Stream<UserModel> userData(String userId) {
+    return firestore.collection('users').doc(userId).snapshots().map(
+          (event) => UserModel.fromMap(
+            event.data()!,
+          ),
+        );
+  }
+
+  void setUserState(bool isOnline) async {
+    await firestore.collection('users').doc(auth.currentUser!.uid).update({
+      'isOnline': isOnline,
+    });
   }
 }

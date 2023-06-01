@@ -1,48 +1,59 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:whatsapp_clone_using_flutter/common/upload_enum.dart';
 import 'package:whatsapp_clone_using_flutter/features/auth/repository/auth_repository.dart';
 import 'package:whatsapp_clone_using_flutter/models/user_model.dart';
 
-final authControllerProvider = Provider(
-  (ref) => AuthController(ref.watch(authRepositoryProvider)),
-);
+final authControllerProvider = Provider((ref) {
+  final authRepository = ref.watch(authRepositoryProvider);
+  return AuthController(authRepository: authRepository, ref: ref);
+});
 
-final userDataProvider = FutureProvider(
-  (ref) => ref.watch(authControllerProvider).getUserData(),
-);
+final userDataAuthProvider = FutureProvider((ref) {
+  final authController = ref.watch(authControllerProvider);
+  return authController.getUserData();
+});
 
 class AuthController {
-  final AuthRepository _authRepository;
-
-  AuthController(this._authRepository);
-
-  void sendOTPToPhone(String phoneNumber, void otpCodeSent(String, Int)) {
-    _authRepository.sendOTPToPhone(
-      phoneNumber,
-      (verificationID, resendToken) =>
-          {otpCodeSent(verificationID, resendToken)},
-    );
-  }
-
-  void verifyOTP(String verificationId, String otp,
-      void Function(bool success) onSuccess) {
-    _authRepository.verifyOTP(otp, verificationId, (success) {
-      onSuccess(success);
-    });
-  }
+  final AuthRepository authRepository;
+  final ProviderRef ref;
+  AuthController({
+    required this.authRepository,
+    required this.ref,
+  });
 
   Future<UserModel?> getUserData() async {
-    UserModel? userModel = await _authRepository.getUserData();
-    return userModel;
+    UserModel? user = await authRepository.getCurrentUserData();
+    return user;
   }
 
-  Future<UploadStatus> updateUserNameAndPhoto(
-      File? image, String photoUrl, String userName) async {
-    return await _authRepository.updateUserNameAndPhoto(
-      image,
-      photoUrl,
-      userName,
+  void signInWithPhone(BuildContext context, String phoneNumber) {
+    authRepository.signInWithPhone(context, phoneNumber);
+  }
+
+  void verifyOTP(BuildContext context, String verificationId, String userOTP) {
+    authRepository.verifyOTP(
+      context: context,
+      verificationId: verificationId,
+      userOTP: userOTP,
     );
+  }
+
+  void saveUserDataToFirebase(
+      BuildContext context, String name, File? profilePic) {
+    authRepository.saveUserDataToFirebase(
+      name: name,
+      profilePic: profilePic,
+      ref: ref,
+      context: context,
+    );
+  }
+
+  Stream userDataById(String userId) {
+    return authRepository.userData(userId);
+  }
+
+  void setUserState(bool isOnline) {
+    authRepository.setUserState(isOnline);
   }
 }
