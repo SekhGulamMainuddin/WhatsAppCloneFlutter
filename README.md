@@ -1,4 +1,7 @@
 # Whatsapp Clone using Flutter
+### Learning Flutter
+Thanks to [Rivaan Ranawat](https://github.com/RivaanRanawat). I followed his tutorial to build this project - May 24, 2023.
+
 This app is the clone of WhatsApp. It consists of features of WhatsApp Mobile like ___Chatting___, ___Single & Group Chat___, ___Video & Audio Call___, content sharing like ___GIF___, ___Images___, ___Videos___, etc. The backend is build on Firebase and Video & Audio Calling feature is implemented using Agora.
 
   <p><br></p>
